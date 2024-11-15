@@ -1,3 +1,4 @@
 module.exports = {
-  databseConnection: "Database connected succesfull",
+  DATABASE_CONNECTION: `database Connected successfully`,
+  VALIDATION_ERROR: `validation error`,
 };
