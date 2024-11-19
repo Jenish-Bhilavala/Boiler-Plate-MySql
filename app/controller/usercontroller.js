@@ -1,9 +1,12 @@
 const db = require("../middleware/db");
+const { sendOTP, generateOTP } = require("../services/email");
 const logger = require("../services/logger");
-const { registerValidation } = require("../validation/userValidate");
+const { registerValidation, loginUser } = require("../validation/userValidate");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
+
+const otp = Math.floor(100000 + Math.random() * 900000);
 
 module.exports = {
   // Register
@@ -14,43 +17,58 @@ module.exports = {
         return res.status(400).json({ message: error.details[0].message });
       }
 
-      console.log("File Upload Result:", req.file);
-
       const { firstName, lastName, hobby, gender, email, password, phone } =
         req.body;
 
-      const image = req.file ? req.file.filename : null;
-
-      const saltRounds = 10;
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-      const query = `INSERT INTO users (firstName, lastName, hobby, gender, email, password, phone, image) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-
       db.query(
-        query,
-        [
-          firstName,
-          lastName,
-          hobby,
-          gender,
-          email,
-          hashedPassword,
-          phone,
-          image,
-        ],
-        (err, result) => {
+        `SELECT * FROM users WHERE email = ?`,
+        [email],
+        async (err, results) => {
           if (err) {
-            logger.error(`Error inserting user: ${err.message}`);
+            logger.error(`Error checking email: ${err.message}`);
             return res
               .status(500)
-              .json({ message: "Error registering user", error: err.message });
+              .json({ message: "Database error", error: err.message });
           }
 
-          return res.status(201).json({
-            message: "User registered successfully",
-            userId: result.insertId,
-          });
+          if (results.length > 0) {
+            return res.status(400).json({ message: "Email already in use" });
+          }
+
+          const image = req.file ? req.file.filename : null;
+          const saltRounds = 10;
+          const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+          const query = `INSERT INTO users (firstName, lastName, hobby, gender, email, password, phone, image) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+          db.query(
+            query,
+            [
+              firstName,
+              lastName,
+              hobby,
+              gender,
+              email,
+              hashedPassword,
+              phone,
+              image,
+            ],
+            (err, result) => {
+              if (err) {
+                logger.error(`Error inserting user: ${err.message}`);
+                return res.status(500).json({
+                  message: "Error registering user",
+                  error: err.message,
+                });
+              }
+
+              return res.status(201).json({
+                message: "User registered successfully",
+                userId: result.insertId,
+              });
+            }
+          );
         }
       );
     } catch (error) {
@@ -61,12 +79,9 @@ module.exports = {
       });
     }
   },
-
   // Get all user
   getUser: (req, res) => {
-    const query = "SELECT * FROM users";
-
-    db.query(query, (err, results) => {
+    db.query(`SELECT * FROM users`, (err, results) => {
       if (err) {
         logger.error(`Error fetching users: ${err.message}`);
         return res.status(500).json({
@@ -82,14 +97,13 @@ module.exports = {
   },
 
   // Login
-  userLogin: async (req, res) => {
+  loginUser: async (req, res) => {
     try {
       const { email, password } = req.body;
 
-      if (!email || !password) {
-        return res
-          .status(400)
-          .json({ message: "Email and password are required" });
+      const { error } = loginUser.validate(req.body);
+      if (error) {
+        return res.status(400).json({ message: error.details[0].message });
       }
 
       db.query(
@@ -103,15 +117,22 @@ module.exports = {
               .json({ message: "Database error", error: err.message });
           }
 
+          if (results.length === 0) {
+            return res.status(404).json({ message: "User not found" });
+          }
+
           const user = results[0];
 
           const isPasswordMatch = await bcrypt.compare(password, user.password);
+          console.log(password);
+          console.log(user.password);
+          console.log(isPasswordMatch);
 
-          if (!isPasswordMatch) {
+          if (isPasswordMatch) {
             const token = jwt.sign(
               { id: user.id, email: user.email },
               process.env.JWT_SECRET,
-              { expiresIn: "1h" }
+              { expiresIn: "24h" }
             );
 
             return res.status(200).json({
@@ -127,11 +148,36 @@ module.exports = {
         }
       );
     } catch (error) {
-      logger.error(`Error in userLogin: ${error.message}`);
+      logger.error(`Error in loginUser: ${error.message}`);
       return res.status(500).json({
         message: "An unexpected error occurred",
         error: error.message,
       });
     }
+  },
+  // email verify
+  verifyEmail: (req, res) => {
+    const email = req.body.email;
+
+    db.query(
+      "SELECT * FROM users WHERE email = ?",
+      [email],
+      async (error, result) => {
+        if (error) {
+          console.error("Database error:", error);
+          return res.status(500).send("Server error");
+        }
+
+        if (result.length > 0) {
+          const otp = generateOTP();
+
+          sendOTP(email, otp, db);
+
+          return res.send("OTP sent successfully.");
+        } else {
+          return res.send("User not found.");
+        }
+      }
+    );
   },
 };

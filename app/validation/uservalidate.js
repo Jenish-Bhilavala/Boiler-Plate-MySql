@@ -41,4 +41,20 @@ const registerValidation = Joi.object({
   image: Joi.string().optional(),
 });
 
-module.exports = { registerValidation };
+const loginUser = Joi.object({
+  email: Joi.string().empty().email().required().messages({
+    "string.base": "Email should be a type of 'text'.",
+    "string.empty": "Email cannot be an empty field.",
+    "string.email": "Email format is not valid.",
+    "any.required": "Email is a required field.",
+  }),
+  password: Joi.string().empty().min(6).max(16).required().messages({
+    "string.base": "Password should be a type of text.",
+    "string.empty": "Password cannot be an empty field.",
+    "string.min": "Password should be of minimum 6 characters.",
+    "string.max": "Password can be of maximum 16 characters.",
+    "any.required": "Password is a required field.",
+  }),
+});
+
+module.exports = { registerValidation, loginUser };
