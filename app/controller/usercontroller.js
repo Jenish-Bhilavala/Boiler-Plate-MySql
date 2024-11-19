@@ -4,17 +4,26 @@ const logger = require("../services/logger");
 const { registerValidation, loginUser } = require("../validation/userValidate");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const { StatusCodes } = require("http-status-codes");
+const { BadRequest } = require("../utils/error");
+const { GeneralResponse } = require("../utils/response");
 require("dotenv").config();
 
 const otp = Math.floor(100000 + Math.random() * 900000);
 
 module.exports = {
   // Register
-  registerUser: async (req, res) => {
+  registerUser: async (req, res, next) => {
     try {
       const { error } = registerValidation.validate(req.body);
       if (error) {
-        return res.status(400).json({ message: error.details[0].message });
+        return next(
+          new BadRequest(
+            `${error.details[0].message}`,
+            { updated: false },
+            StatusCodes.BAD_REQUEST
+          )
+        );
       }
 
       const { firstName, lastName, hobby, gender, email, password, phone } =
@@ -26,13 +35,23 @@ module.exports = {
         async (err, results) => {
           if (err) {
             logger.error(`Error checking email: ${err.message}`);
-            return res
-              .status(500)
-              .json({ message: "Database error", error: err.message });
+            return next(
+              new BadRequest(
+                "Database error",
+                { message: err.message },
+                StatusCodes.BAD_REQUEST
+              )
+            );
           }
 
           if (results.length > 0) {
-            return res.status(400).json({ message: "Email already in use" });
+            return next(
+              new BadRequest(
+                "Email allredy in use.",
+                { updated: false },
+                StatusCodes.BAD_REQUEST
+              )
+            );
           }
 
           const image = req.file ? req.file.filename : null;
@@ -57,53 +76,76 @@ module.exports = {
             (err, result) => {
               if (err) {
                 logger.error(`Error inserting user: ${err.message}`);
-                return res.status(500).json({
-                  message: "Error registering user",
-                  error: err.message,
-                });
+                return next(
+                  new BadRequest(
+                    "Error registering user",
+                    { error: err.message },
+                    StatusCodes.BAD_REQUEST
+                  )
+                );
               }
 
-              return res.status(201).json({
-                message: "User registered successfully",
-                userId: result.insertId,
-              });
+              return next(
+                new GeneralResponse(
+                  StatusCodes.CREATED,
+                  StatusCodes.CREATED,
+                  "User registerd successfully",
+                  { userId: results.insertId }
+                )
+              );
             }
           );
         }
       );
     } catch (error) {
       logger.error(`Error in registerUser: ${error.message}`);
-      return res.status(500).json({
-        message: "An unexpected error occurred",
-        error: error.message,
-      });
+      return next(
+        new BadRequest(
+          "Internal server error",
+          { error: error.message },
+          StatusCodes.INTERNAL_SERVER_ERROR
+        )
+      );
     }
   },
   // Get all user
-  getUser: (req, res) => {
+  getUser: (req, res, next) => {
     db.query(`SELECT * FROM users`, (err, results) => {
       if (err) {
         logger.error(`Error fetching users: ${err.message}`);
-        return res.status(500).json({
-          message: "Error fetching users",
-          error: err.message,
-        });
+        return next(
+          new BadRequest(
+            "Error fatching user",
+            { error: err.message },
+            StatusCodes.INTERNAL_SERVER_ERROR
+          )
+        );
       }
-      return res.status(200).json({
-        message: "Users retrieved successfully",
-        data: results,
-      });
+      return next(
+        new GeneralResponse(
+          StatusCodes.OK,
+          StatusCodes.OK,
+          "User retrived successfully",
+          results
+        )
+      );
     });
   },
 
   // Login
-  loginUser: async (req, res) => {
+  loginUser: async (req, res, next) => {
     try {
       const { email, password } = req.body;
 
       const { error } = loginUser.validate(req.body);
       if (error) {
-        return res.status(400).json({ message: error.details[0].message });
+        return next(
+          new BadRequest(
+            `${error.details[0].message}`,
+            { updated: false },
+            StatusCodes.BAD_REQUEST
+          )
+        );
       }
 
       db.query(
@@ -112,21 +154,28 @@ module.exports = {
         async (err, results) => {
           if (err) {
             logger.error(`Error finding user: ${err.message}`);
-            return res
-              .status(500)
-              .json({ message: "Database error", error: err.message });
+            return next(
+              new BadRequest(
+                "Internal server error",
+                { updated: false },
+                StatusCodes.INTERNAL_SERVER_ERROR
+              )
+            );
           }
 
           if (results.length === 0) {
-            return res.status(404).json({ message: "User not found" });
+            return next(
+              new BadRequest(
+                "User not found",
+                { updated: false },
+                StatusCodes.NOT_FOUND
+              )
+            );
           }
 
           const user = results[0];
 
           const isPasswordMatch = await bcrypt.compare(password, user.password);
-          console.log(password);
-          console.log(user.password);
-          console.log(isPasswordMatch);
 
           if (isPasswordMatch) {
             const token = jwt.sign(
@@ -135,28 +184,39 @@ module.exports = {
               { expiresIn: "24h" }
             );
 
-            return res.status(200).json({
-              message: "Login successful",
-              token,
-            });
+            return next(
+              new GeneralResponse(
+                StatusCodes.OK,
+                StatusCodes.OK,
+                "Login successfull",
+                { token }
+              )
+            );
           } else {
             logger.error(`Invalid password for user: ${email}`);
-            return res
-              .status(401)
-              .json({ message: "Invalid email or password" });
+            return next(
+              new BadRequest(
+                "Invalid password",
+                { updated: false },
+                StatusCodes.UNAUTHORIZED
+              )
+            );
           }
         }
       );
     } catch (error) {
       logger.error(`Error in loginUser: ${error.message}`);
-      return res.status(500).json({
-        message: "An unexpected error occurred",
-        error: error.message,
-      });
+      return next(
+        new BadRequest(
+          `${error.message}`,
+          { updated: false },
+          StatusCodes.INTERNAL_SERVER_ERROR
+        )
+      );
     }
   },
   // email verify
-  verifyEmail: (req, res) => {
+  verifyEmail: (req, res, next) => {
     const email = req.body.email;
 
     db.query(
@@ -165,7 +225,13 @@ module.exports = {
       async (error, result) => {
         if (error) {
           console.error("Database error:", error);
-          return res.status(500).send("Server error");
+          return next(
+            new BadRequest(
+              "Internal server error",
+              { error: error.message },
+              StatusCodes.INTERNAL_SERVER_ERROR
+            )
+          );
         }
 
         if (result.length > 0) {
@@ -173,9 +239,18 @@ module.exports = {
 
           sendOTP(email, otp, db);
 
-          return res.send("OTP sent successfully.");
+          return next(
+            new GeneralResponse(
+              StatusCodes.OK,
+              StatusCodes.OK,
+              "OTP sent successfully",
+              { OTP: otp }
+            )
+          );
         } else {
-          return res.send("User not found.");
+          return next(
+            new BadRequest("User not found", undefined, StatusCodes.NOT_FOUND)
+          );
         }
       }
     );

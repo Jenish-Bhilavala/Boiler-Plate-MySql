@@ -5,7 +5,7 @@ const handleErrors = (err, req, res, next) => {
   if (err instanceof GeneralError) {
     return res.status(err.statusCode || err.getCode()).json({
       status: false,
-      code: err.statusCode || err.getCode(),
+      statusCode: err.statusCode || err.getCode(),
       message: err.message,
       result: err.result || undefined,
     });
@@ -13,7 +13,7 @@ const handleErrors = (err, req, res, next) => {
 
   return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
     status: false,
-    code: StatusCodes.INTERNAL_SERVER_ERROR,
+    statusCode: StatusCodes.INTERNAL_SERVER_ERROR,
     message: err.message,
   });
 };

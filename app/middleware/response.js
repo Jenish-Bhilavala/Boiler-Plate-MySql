@@ -5,7 +5,7 @@ const handleResponse = (response, req, res, next) => {
   if (response instanceof GeneralResponse) {
     return res.status(StatusCodes.OK).json({
       status: StatusCodes.OK,
-      code: StatusCodes.OK,
+      statusCode: StatusCodes.OK,
       message: response.message,
       result: response.result,
     });
