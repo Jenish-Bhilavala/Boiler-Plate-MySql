@@ -2,8 +2,8 @@ const db = require("../middleware/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const message = require("../utils/message");
-const { registerValidation, loginUser } = require("../validation/userValidate");
 const responseStatus = require("../utils/enum");
+const { registerValidation, loginUser } = require("../validation/userValidate");
 const { sendOTP, generateOTP } = require("../services/email");
 const { StatusCodes } = require("http-status-codes");
 const { GeneralError, NotFound, UnAuthorized } = require("../utils/error");
@@ -168,7 +168,7 @@ module.exports = {
             new NotFound(
               responseStatus.RESPONSE_ERROR,
               StatusCodes.NOT_FOUND,
-              message.USER_NOT_FOUND,
+              `User ${message.NOT_FOUND}`,
               undefined
             )
           );
@@ -277,7 +277,7 @@ module.exports = {
           new NotFound(
             responseStatus.RESPONSE_ERROR,
             StatusCodes.NOT_FOUND,
-            message.USER_NOT_FOUND,
+            `User ${message.NOT_FOUND}`,
             undefined
           )
         );
