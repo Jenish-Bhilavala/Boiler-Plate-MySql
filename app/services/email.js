@@ -17,19 +17,22 @@ const generateOTP = () => {
   return crypto.randomInt(100000, 999999).toString();
 };
 
-const sendOTP = (obj) => {
-  const { email, otp } = obj;
-  let mailOptions;
+const sendOTP = async (email, otp) => {
+  const mailOptions = {
+    to: email,
+    subject: "OTP Verification",
+    html: `
+      <p>Your OTP is <strong>${otp}</strong></p>
+      <p>Please do not share it with anyone.</p>
+      <p>OTP will expire in 5 minutes.</p>
+    `,
+  };
 
-  if (email && otp) {
-    mailOptions = {
-      to: email,
-      subject: "OTP Verification",
-      html: `Your OTP is <strong>${otp}</strong><br>Please do not share it with anyone.<br>OTP will expire in 5 minutes.`,
-    };
+  try {
+    await transporter.sendMail(mailOptions);
+  } catch (error) {
+    throw new Error(`Failed to send OTP to ${email}: ${error.message}`);
   }
-
-  return transporter.sendMail(mailOptions);
 };
 
 module.exports = { sendOTP, generateOTP };

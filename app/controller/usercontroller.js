@@ -210,16 +210,14 @@ module.exports = {
               responseStatus.RESPONSE_ERROR,
               StatusCodes.INTERNAL_SERVER_ERROR,
               message.DATABASE_ERROR,
-              error.message
+              error
             )
           );
         }
 
         if (result.length > 0) {
-          // User found, generate OTP
           const otp = generateOTP();
           const expiresAt = new Date();
-
           expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
           const insertOtpQuery =
@@ -256,7 +254,7 @@ module.exports = {
           );
         } else {
           return next(
-            NotFound(
+            new GeneralError(
               responseStatus.RESPONSE_ERROR,
               StatusCodes.NOT_FOUND,
               `User ${message.NOT_FOUND}`,
@@ -278,7 +276,7 @@ module.exports = {
   },
 
   // Reset Password
-  resetPassword: (req, res, next) => {
+  forgotPassword: (req, res, next) => {
     const { email, newPassword, confirmPassword, otp } = req.body;
 
     db.query(
