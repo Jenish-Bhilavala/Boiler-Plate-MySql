@@ -2,13 +2,17 @@ const express = require("express");
 const router = express.Router();
 const upload = require("../../services/multer");
 const {
-  registerUser,
   getUser,
-  userLogin,
-} = require("../../controller/userController");
+  registerUser,
+  loginUser,
+  verifyEmail,
+  resetPassword,
+} = require("../../controller/usercontroller");
 
-router.get("/register", getUser);
-router.post("/register", upload.single("image"), registerUser);
-router.post("/login", userLogin);
+router.get("/registration", getUser);
+router.post("/registration", upload.single("image"), registerUser);
+router.post("/login", loginUser);
+router.post("/verify-email", verifyEmail);
+router.post("/verify-email", resetPassword);
 
 module.exports = router;
