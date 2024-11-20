@@ -1,9 +1,10 @@
 const { StatusCodes } = require("http-status-codes");
 
 class GeneralResponse {
-  constructor(message, result, statusCode = "") {
+  constructor(status = StatusCodes.OK, statusCode = "", message, result) {
+    this.status = status;
+    this.statusCode = statusCode || StatusCodes.OK;
     this.message = message;
-    this.statusCode = statusCode == "" ? StatusCodes.OK : statusCode;
     this.result = result;
   }
 }

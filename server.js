@@ -6,20 +6,20 @@ const helmet = require("helmet");
 app.use(helmet());
 
 require("dotenv").config();
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "app", "public")));
 
 const cors = require("cors");
 app.use(cors());
 
-const bodyParser = require("body-parser");
-app.use(bodyParser.json({ limit: "50mb" }));
-app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-app.use("/api/users", require("./app/routes/user"));
+app.use(require("express-useragent").express());
+app.use("/", require("./app/routes/router"));
 
 app.use(require("./app/middleware/response"));
 app.use(require("./app/middleware/error").handleJoiErrors);
 app.use(require("./app/middleware/error").handleErrors);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
