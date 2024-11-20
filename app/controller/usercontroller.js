@@ -3,7 +3,11 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const message = require("../utils/message");
 const responseStatus = require("../utils/enum");
-const { registerValidation, loginUser } = require("../validation/userValidate");
+const {
+  registerValidation,
+  loginUser,
+  forgotPasswordValidation,
+} = require("../validation/userValidate");
 const { sendOTP, generateOTP } = require("../services/email");
 const { StatusCodes } = require("http-status-codes");
 const { GeneralError, NotFound, UnAuthorized } = require("../utils/error");
@@ -198,93 +202,93 @@ module.exports = {
   },
 
   // Email verification
-  verifyEmail: async (req, res, next) => {
+  verifyEmail: (req, res, next) => {
     const email = req.body.email;
 
-    try {
-      const findUserQuery = "SELECT * FROM users WHERE email = ?";
-      db.query(findUserQuery, [email], async (error, result) => {
-        if (error) {
+    const findUserQuery = "SELECT * FROM users WHERE email = ?";
+    db.query(findUserQuery, [email], (error, result) => {
+      if (error) {
+        return next(
+          new GeneralError(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.INTERNAL_SERVER_ERROR,
+            message.DATABASE_ERROR,
+            error
+          )
+        );
+      }
+
+      if (result.length === 0) {
+        return next(
+          new GeneralError(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.NOT_FOUND,
+            `User ${message.NOT_FOUND}`,
+            undefined
+          )
+        );
+      }
+
+      const otp = generateOTP();
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 5);
+
+      const insertOtpQuery =
+        "INSERT INTO otp (email, otp, expires_at) VALUES (?, ?, ?)";
+      db.query(insertOtpQuery, [email, otp, expiresAt], (err) => {
+        if (err) {
           return next(
             new GeneralError(
               responseStatus.RESPONSE_ERROR,
               StatusCodes.INTERNAL_SERVER_ERROR,
               message.DATABASE_ERROR,
-              error
+              err.message
             )
           );
         }
 
-        if (result.length > 0) {
-          const otp = generateOTP();
-          const expiresAt = new Date();
-          expiresAt.setMinutes(expiresAt.getMinutes() + 5);
-
-          const insertOtpQuery =
-            "INSERT INTO otp (email, otp, expires_at) VALUES (?, ?, ?)";
-          db.query(
-            insertOtpQuery,
-            [email, otp, expiresAt],
-            async (insertError, insertResult) => {
-              if (insertError) {
-                return next(
-                  new GeneralError(
-                    responseStatus.RESPONSE_ERROR,
-                    StatusCodes.INTERNAL_SERVER_ERROR,
-                    message.DATABASE_ERROR,
-                    insertError.message
-                  )
-                );
-              }
-
-              try {
-                await sendOTP(email, otp);
-                return next(
-                  new GeneralResponse(
-                    responseStatus.RESPONSE_SUCCESS,
-                    StatusCodes.OK,
-                    message.OTP_SENT,
-                    { result: otp }
-                  )
-                );
-              } catch (sendError) {
-                return next(
-                  new GeneralError(
-                    responseStatus.RESPONSE_ERROR,
-                    StatusCodes.INTERNAL_SERVER_ERROR,
-                    message.FAILED_SENDING_OTP,
-                    sendError.message
-                  )
-                );
-              }
-            }
-          );
-        } else {
+        if (sendOTP(email, otp)) {
           return next(
-            new GeneralError(
-              responseStatus.RESPONSE_ERROR,
-              StatusCodes.NOT_FOUND,
-              `User ${message.NOT_FOUND}`,
-              undefined
+            new GeneralResponse(
+              responseStatus.RESPONSE_SUCCESS,
+              StatusCodes.OK,
+              message.OTP_SENT,
+              { result: otp }
             )
           );
         }
+
+        return next(
+          new GeneralError(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.INTERNAL_SERVER_ERROR,
+            message.FAILED_SENDING_OTP,
+            sendError.message
+          )
+        );
       });
-    } catch (error) {
-      return next(
-        new GeneralError(
-          responseStatus.RESPONSE_ERROR,
-          StatusCodes.INTERNAL_SERVER_ERROR,
-          message.INTERNAL_SERVER_ERROR,
-          error.message
-        )
-      );
-    }
+    });
   },
 
   // Reset Password
   forgotPassword: (req, res, next) => {
     const { email, newPassword, confirmPassword, otp } = req.body;
+
+    const { error } = forgotPasswordValidation.validate({
+      newPassword,
+      confirmPassword,
+    });
+
+    if (error) {
+      return next(
+        new GeneralError(
+          responseStatus.RESPONSE_ERROR,
+          StatusCodes.BAD_REQUEST,
+          error.details[0].message,
+          undefined
+        )
+      );
+    }
 
     db.query(
       "SELECT * FROM otp WHERE email = ? ORDER BY created_at DESC LIMIT 1",
@@ -327,23 +331,13 @@ module.exports = {
         }
 
         const now = new Date();
+
         if (now >= expiresAt) {
           return next(
             new GeneralError(
               responseStatus.RESPONSE_ERROR,
               StatusCodes.BAD_REQUEST,
               message.OTP_EXPIRED,
-              undefined
-            )
-          );
-        }
-
-        if (newPassword !== confirmPassword) {
-          return next(
-            new GeneralError(
-              responseStatus.RESPONSE_ERROR,
-              StatusCodes.BAD_REQUEST,
-              message.CONFIRM_PASSWORD_ERROR,
               undefined
             )
           );
