@@ -239,7 +239,14 @@ module.exports = {
 
               try {
                 await sendOTP(email, otp);
-                return res.status(200).send("OTP sent successfully.");
+                return next(
+                  new GeneralResponse(
+                    responseStatus.RESPONSE_SUCCESS,
+                    StatusCodes.OK,
+                    message.OTP_SENT,
+                    { result: otp }
+                  )
+                );
               } catch (sendError) {
                 return next(
                   new GeneralError(
