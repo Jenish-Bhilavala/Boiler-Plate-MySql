@@ -1,10 +1,11 @@
 const { StatusCodes } = require("http-status-codes");
 
 class GeneralError extends Error {
-  constructor(message, result = "", statusCode = "") {
+  constructor(status, statusCode = "", message, result = "") {
     super();
-    this.message = message;
+    this.status = status;
     this.statusCode = statusCode;
+    this.message = message;
     this.result = result === "" ? undefined : result;
   }
   getCode() {

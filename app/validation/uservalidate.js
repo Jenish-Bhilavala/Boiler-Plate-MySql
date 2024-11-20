@@ -28,17 +28,35 @@ const registerValidation = Joi.object({
     "any.required": "Email is a required field.",
     "string.email": "Email must be a valid email address.",
   }),
-  password: Joi.string().required().messages({
-    "string.base": "Password must be a string.",
-    "string.empty": "Password cannot be empty.",
-    "any.required": "Password is a required field.",
-  }),
-  phone: Joi.string().required().messages({
-    "string.base": "Phone must be a string.",
+  password: Joi.string()
+    .pattern(new RegExp("^[A-Z][a-zA-Z0-9]{7,}$"))
+    .required()
+    .messages({
+      "string.pattern.base":
+        "Password must start with a capital letter and be at least 8 characters long.",
+      "string.empty": "Password cannot be empty.",
+      "any.required": "Password is a required field.",
+    }),
+  phone: Joi.string().pattern(new RegExp("^[0-9]{10}$")).required().messages({
+    "string.pattern.base": "Phone must be exactly 10 digits.",
     "string.empty": "Phone cannot be empty.",
     "any.required": "Phone is a required field.",
   }),
   image: Joi.string().optional(),
 });
 
-module.exports = { registerValidation };
+const loginUser = Joi.object({
+  email: Joi.string().empty().email().required().messages({
+    "string.base": "Email should be a type of 'text'.",
+    "string.empty": "Email cannot be an empty field.",
+    "string.email": "Email format is not valid.",
+    "any.required": "Email is a required field.",
+  }),
+  password: Joi.string().empty().required().messages({
+    "string.base": "Password should be a type of text.",
+    "string.empty": "Password cannot be an empty field.",
+    "any.required": "Password is a required field.",
+  }),
+});
+
+module.exports = { registerValidation, loginUser };

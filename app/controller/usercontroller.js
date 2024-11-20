@@ -168,7 +168,6 @@ module.exports = {
         }
 
         const user = results[0];
-
         const isPasswordMatch = await bcrypt.compare(password, user.password);
 
         if (isPasswordMatch) {
@@ -217,23 +216,53 @@ module.exports = {
         }
 
         if (result.length > 0) {
+          // User found, generate OTP
           const otp = generateOTP();
+          const expiresAt = new Date();
 
-          try {
-            await sendOTP(email, otp);
-            return res.status(200).send("OTP sent successfully.");
-          } catch (sendError) {
-            return next(
-              new GeneralError(
-                responseStatus.RESPONSE_ERROR,
-                StatusCodes.INTERNAL_SERVER_ERROR,
-                message.FAILED_SENDING_OTP,
-                sendError.message
-              )
-            );
-          }
+          expiresAt.setMinutes(expiresAt.getMinutes() + 5);
+
+          const insertOtpQuery =
+            "INSERT INTO otp (email, otp, expires_at) VALUES (?, ?, ?)";
+          db.query(
+            insertOtpQuery,
+            [email, otp, expiresAt],
+            async (insertError, insertResult) => {
+              if (insertError) {
+                return next(
+                  new GeneralError(
+                    responseStatus.RESPONSE_ERROR,
+                    StatusCodes.INTERNAL_SERVER_ERROR,
+                    message.DATABASE_ERROR,
+                    insertError.message
+                  )
+                );
+              }
+
+              try {
+                await sendOTP(email, otp);
+                return res.status(200).send("OTP sent successfully.");
+              } catch (sendError) {
+                return next(
+                  new GeneralError(
+                    responseStatus.RESPONSE_ERROR,
+                    StatusCodes.INTERNAL_SERVER_ERROR,
+                    message.FAILED_SENDING_OTP,
+                    sendError.message
+                  )
+                );
+              }
+            }
+          );
         } else {
-          return res.status(404).send("User not found.");
+          return next(
+            NotFound(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.NOT_FOUND,
+              `User ${message.NOT_FOUND}`,
+              undefined
+            )
+          );
         }
       });
     } catch (error) {
@@ -272,7 +301,7 @@ module.exports = {
             new GeneralError(
               responseStatus.RESPONSE_ERROR,
               StatusCodes.NOT_FOUND,
-              "OTP not found",
+              message.INVALID_OTP,
               undefined
             )
           );
@@ -286,7 +315,7 @@ module.exports = {
             new GeneralError(
               responseStatus.RESPONSE_ERROR,
               StatusCodes.BAD_REQUEST,
-              "Invalid OTP",
+              message.INVALID_OTP,
               undefined
             )
           );
@@ -298,7 +327,7 @@ module.exports = {
             new GeneralError(
               responseStatus.RESPONSE_ERROR,
               StatusCodes.BAD_REQUEST,
-              "OTP expired",
+              message.OTP_EXPIRED,
               undefined
             )
           );
@@ -309,7 +338,7 @@ module.exports = {
             new GeneralError(
               responseStatus.RESPONSE_ERROR,
               StatusCodes.BAD_REQUEST,
-              "Confirm password must be the same.",
+              message.CONFIRM_PASSWORD_ERROR,
               undefined
             )
           );
@@ -321,7 +350,7 @@ module.exports = {
               new GeneralError(
                 responseStatus.RESPONSE_ERROR,
                 StatusCodes.INTERNAL_SERVER_ERROR,
-                "Internal server error.",
+                message.INTERNAL_SERVER_ERROR,
                 err.message
               )
             );
@@ -336,7 +365,7 @@ module.exports = {
                   new GeneralError(
                     responseStatus.RESPONSE_ERROR,
                     StatusCodes.INTERNAL_SERVER_ERROR,
-                    "Error updating password.",
+                    message.UPDATE_PASSWORD_ERROR,
                     err.message
                   )
                 );
@@ -346,7 +375,7 @@ module.exports = {
                 new GeneralResponse(
                   responseStatus.RESPONSE_SUCCESS,
                   StatusCodes.OK,
-                  "Password updated successfully",
+                  message.UPDATE_PASSWORD,
                   undefined
                 )
               );

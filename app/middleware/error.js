@@ -1,11 +1,12 @@
 const { BadRequest, GeneralError } = require("../utils/error");
 const { StatusCodes } = require("http-status-codes");
+const message = require("../utils/message");
 
 const handleErrors = (err, req, res, next) => {
   if (err instanceof GeneralError) {
     return res.status(err.statusCode || err.getCode()).json({
       status: false,
-      code: err.statusCode || err.getCode(),
+      statusCode: err.statusCode || err.getCode(),
       message: err.message,
       result: err.result || undefined,
     });
@@ -13,7 +14,7 @@ const handleErrors = (err, req, res, next) => {
 
   return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
     status: false,
-    code: StatusCodes.INTERNAL_SERVER_ERROR,
+    statusCode: StatusCodes.INTERNAL_SERVER_ERROR,
     message: err.message,
   });
 };
@@ -30,7 +31,7 @@ const handleJoiErrors = (err, req, res, next) => {
         };
       });
     }
-    next(new BadRequest("Validation Error", customErrorResponse));
+    next(new BadRequest(message.VALIDATION_ERROR, customErrorResponse));
   } else {
     next(err);
   }
