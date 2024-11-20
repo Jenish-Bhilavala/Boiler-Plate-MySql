@@ -1,137 +1,359 @@
 const db = require("../middleware/db");
-const logger = require("../services/logger");
-const { registerValidation } = require("../validation/userValidate");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const message = require("../utils/message");
+const responseStatus = require("../utils/enum");
+const { registerValidation, loginUser } = require("../validation/userValidate");
+const { sendOTP, generateOTP } = require("../services/email");
+const { StatusCodes } = require("http-status-codes");
+const { GeneralError, NotFound, UnAuthorized } = require("../utils/error");
+const { GeneralResponse } = require("../utils/response");
 require("dotenv").config();
 
 module.exports = {
   // Register
-  registerUser: async (req, res) => {
+  registerUser: async (req, res, next) => {
     try {
       const { error } = registerValidation.validate(req.body);
       if (error) {
-        return res.status(400).json({ message: error.details[0].message });
+        return next(
+          new GeneralError(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.BAD_REQUEST,
+            `${error.details[0].message}`,
+            undefined
+          )
+        );
       }
-
-      console.log("File Upload Result:", req.file);
 
       const { firstName, lastName, hobby, gender, email, password, phone } =
         req.body;
 
-      const image = req.file ? req.file.filename : null;
-
-      const saltRounds = 10;
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-      const query = `INSERT INTO users (firstName, lastName, hobby, gender, email, password, phone, image) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-
-      db.query(
-        query,
-        [
-          firstName,
-          lastName,
-          hobby,
-          gender,
-          email,
-          hashedPassword,
-          phone,
-          image,
-        ],
-        (err, result) => {
-          if (err) {
-            logger.error(`Error inserting user: ${err.message}`);
-            return res
-              .status(500)
-              .json({ message: "Error registering user", error: err.message });
-          }
-
-          return res.status(201).json({
-            message: "User registered successfully",
-            userId: result.insertId,
-          });
+      const findUser = "SELECT * FROM users WHERE email = ?";
+      db.query(findUser, [email], async (err, results) => {
+        if (err) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.INTERNAL_SERVER_ERROR,
+              message.DATABASE_ERROR,
+              err.message
+            )
+          );
         }
-      );
-    } catch (error) {
-      logger.error(`Error in registerUser: ${error.message}`);
-      return res.status(500).json({
-        message: "An unexpected error occurred",
-        error: error.message,
+
+        if (results.length > 0) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.INTERNAL_SERVER_ERROR,
+              message.INTERNAL_SERVER_ERROR,
+              undefined
+            )
+          );
+        }
+
+        const image = req.file ? req.file.filename : null;
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        const createUser = `INSERT INTO users (firstName, lastName, hobby, gender, email, password, phone, image) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+        db.query(
+          createUser,
+          [
+            firstName,
+            lastName,
+            hobby,
+            gender,
+            email,
+            hashedPassword,
+            phone,
+            image,
+          ],
+          (err, result) => {
+            if (err) {
+              return next(
+                new GeneralError(
+                  responseStatus.RESPONSE_ERROR,
+                  StatusCodes.INTERNAL_SERVER_ERROR,
+                  message.ERROR_REGISTERING_USER,
+                  undefined
+                )
+              );
+            }
+
+            return next(
+              new GeneralResponse(
+                responseStatus.RESPONSE_SUCCESS,
+                StatusCodes.CREATED,
+                message.REGISTERING_USER,
+                { userId: result.insertId }
+              )
+            );
+          }
+        );
       });
+    } catch (error) {
+      return next(
+        new GeneralError(
+          responseStatus.RESPONSE_ERROR,
+          StatusCodes.INTERNAL_SERVER_ERROR,
+          message.INTERNAL_SERVER_ERROR,
+          error.message
+        )
+      );
     }
   },
 
-  // Get all user
-  getUser: (req, res) => {
-    const query = "SELECT * FROM users";
+  // Get all users
+  getUser: (req, res, next) => {
+    const displayUsers = "SELECT * FROM users";
 
-    db.query(query, (err, results) => {
+    db.query(displayUsers, (err, results) => {
       if (err) {
-        logger.error(`Error fetching users: ${err.message}`);
-        return res.status(500).json({
-          message: "Error fetching users",
-          error: err.message,
-        });
+        return next(
+          new GeneralError(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.INTERNAL_SERVER_ERROR,
+            message.ERROR_FETCHING_USER,
+            err.message
+          )
+        );
       }
-      return res.status(200).json({
-        message: "Users retrieved successfully",
-        data: results,
-      });
+      return next(
+        new GeneralResponse(
+          responseStatus.RESPONSE_SUCCESS,
+          StatusCodes.OK,
+          message.RETRIEVED_USER,
+          results
+        )
+      );
     });
   },
 
   // Login
-  userLogin: async (req, res) => {
+  loginUser: async (req, res, next) => {
     try {
       const { email, password } = req.body;
 
-      if (!email || !password) {
-        return res
-          .status(400)
-          .json({ message: "Email and password are required" });
+      const { error } = loginUser.validate(req.body);
+      if (error) {
+        return next(
+          new GeneralError(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.BAD_REQUEST,
+            `${error.details[0].message}`,
+            undefined
+          )
+        );
       }
 
-      db.query(
-        `SELECT * FROM users WHERE email = ?`,
-        [email],
-        async (err, results) => {
-          if (err) {
-            logger.error(`Error finding user: ${err.message}`);
-            return res
-              .status(500)
-              .json({ message: "Database error", error: err.message });
-          }
-
-          const user = results[0];
-
-          const isPasswordMatch = await bcrypt.compare(password, user.password);
-
-          if (!isPasswordMatch) {
-            const token = jwt.sign(
-              { id: user.id, email: user.email },
-              process.env.JWT_SECRET,
-              { expiresIn: "1h" }
-            );
-
-            return res.status(200).json({
-              message: "Login successful",
-              token,
-            });
-          } else {
-            logger.error(`Invalid password for user: ${email}`);
-            return res
-              .status(401)
-              .json({ message: "Invalid email or password" });
-          }
+      const findUser = "SELECT * FROM users WHERE email = ?";
+      db.query(findUser, [email], async (err, results) => {
+        if (err) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.INTERNAL_SERVER_ERROR,
+              message.INTERNAL_SERVER_ERROR,
+              undefined
+            )
+          );
         }
-      );
-    } catch (error) {
-      logger.error(`Error in userLogin: ${error.message}`);
-      return res.status(500).json({
-        message: "An unexpected error occurred",
-        error: error.message,
+
+        if (results.length === 0) {
+          return res.status(404).json({ message: "User not found" });
+        }
+
+        const user = results[0];
+
+        const isPasswordMatch = await bcrypt.compare(password, user.password);
+
+        if (isPasswordMatch) {
+          const token = jwt.sign(
+            { id: user.id, email: user.email },
+            process.env.JWT_SECRET,
+            { expiresIn: "24h" }
+          );
+
+          return res.status(200).json({
+            message: "Login successful",
+            token,
+          });
+        } else {
+          return res.status(401).json({ message: "Invalid email or password" });
+        }
       });
+    } catch (error) {
+      return next(
+        new GeneralError(
+          responseStatus.RESPONSE_ERROR,
+          StatusCodes.INTERNAL_SERVER_ERROR,
+          message.INTERNAL_SERVER_ERROR,
+          error.message
+        )
+      );
     }
+  },
+
+  // Email verification
+  verifyEmail: async (req, res, next) => {
+    const email = req.body.email;
+
+    try {
+      const findUserQuery = "SELECT * FROM users WHERE email = ?";
+      db.query(findUserQuery, [email], async (error, result) => {
+        if (error) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.INTERNAL_SERVER_ERROR,
+              message.DATABASE_ERROR,
+              error.message
+            )
+          );
+        }
+
+        if (result.length > 0) {
+          const otp = generateOTP();
+
+          try {
+            await sendOTP(email, otp);
+            return res.status(200).send("OTP sent successfully.");
+          } catch (sendError) {
+            return next(
+              new GeneralError(
+                responseStatus.RESPONSE_ERROR,
+                StatusCodes.INTERNAL_SERVER_ERROR,
+                message.FAILED_SENDING_OTP,
+                sendError.message
+              )
+            );
+          }
+        } else {
+          return res.status(404).send("User not found.");
+        }
+      });
+    } catch (error) {
+      return next(
+        new GeneralError(
+          responseStatus.RESPONSE_ERROR,
+          StatusCodes.INTERNAL_SERVER_ERROR,
+          message.INTERNAL_SERVER_ERROR,
+          error.message
+        )
+      );
+    }
+  },
+
+  // Reset Password
+  resetPassword: (req, res, next) => {
+    const { email, newPassword, confirmPassword, otp } = req.body;
+
+    db.query(
+      "SELECT * FROM otp WHERE email = ? ORDER BY created_at DESC LIMIT 1",
+      [email],
+      (err, result) => {
+        if (err) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.INTERNAL_SERVER_ERROR,
+              message.INTERNAL_SERVER_ERROR,
+              err.message
+            )
+          );
+        }
+
+        if (result.length === 0) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.NOT_FOUND,
+              "OTP not found",
+              undefined
+            )
+          );
+        }
+
+        const storedOtp = result[0].otp;
+        const expiresAt = result[0].expires_at;
+
+        if (storedOtp !== otp) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.BAD_REQUEST,
+              "Invalid OTP",
+              undefined
+            )
+          );
+        }
+
+        const now = new Date();
+        if (now >= expiresAt) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.BAD_REQUEST,
+              "OTP expired",
+              undefined
+            )
+          );
+        }
+
+        if (newPassword !== confirmPassword) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.BAD_REQUEST,
+              "Confirm password must be the same.",
+              undefined
+            )
+          );
+        }
+
+        bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
+          if (err) {
+            return next(
+              new GeneralError(
+                responseStatus.RESPONSE_ERROR,
+                StatusCodes.INTERNAL_SERVER_ERROR,
+                "Internal server error.",
+                err.message
+              )
+            );
+          }
+
+          db.query(
+            "UPDATE users SET password = ? WHERE email = ?",
+            [hashedPassword, email],
+            (err, result) => {
+              if (err) {
+                return next(
+                  new GeneralError(
+                    responseStatus.RESPONSE_ERROR,
+                    StatusCodes.INTERNAL_SERVER_ERROR,
+                    "Error updating password.",
+                    err.message
+                  )
+                );
+              }
+
+              return next(
+                new GeneralResponse(
+                  responseStatus.RESPONSE_SUCCESS,
+                  StatusCodes.OK,
+                  "Password updated successfully",
+                  undefined
+                )
+              );
+            }
+          );
+        });
+      }
+    );
   },
 };
