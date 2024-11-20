@@ -5,7 +5,6 @@ const fs = require("fs");
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // Make sure the 'uploads' folder exists, otherwise create it
     const uploadPath = path.join(__dirname, "../public/uploads");
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });
@@ -13,7 +12,6 @@ const storage = multer.diskStorage({
     cb(null, uploadPath);
   },
   filename: function (req, file, cb) {
-    // Generate a random filename using crypto
     crypto.randomBytes(12, function (err, bytes) {
       if (err) {
         return cb(err);

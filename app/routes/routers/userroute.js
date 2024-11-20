@@ -8,9 +8,9 @@ const {
   verifyEmail,
 } = require("../../controller/usercontroller");
 
-router.get("/register", getUser);
-router.post("/register", upload.single("image"), registerUser);
+router.get("/registeration", getUser);
+router.post("/registeration", upload.single("image"), registerUser);
 router.post("/login", loginUser);
-router.post("/verifyemail", verifyEmail);
+router.post("/verify-email", verifyEmail);
 
 module.exports = router;

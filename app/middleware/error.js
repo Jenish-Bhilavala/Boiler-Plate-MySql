@@ -1,5 +1,6 @@
 const { BadRequest, GeneralError } = require("../utils/error");
 const { StatusCodes } = require("http-status-codes");
+const message = require("../utils/message");
 
 const handleErrors = (err, req, res, next) => {
   if (err instanceof GeneralError) {
@@ -30,7 +31,7 @@ const handleJoiErrors = (err, req, res, next) => {
         };
       });
     }
-    next(new BadRequest("Validation Error", customErrorResponse));
+    next(new BadRequest(message.VALIDATION_ERROR, customErrorResponse));
   } else {
     next(err);
   }

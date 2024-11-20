@@ -1,5 +1,6 @@
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
+require("dotenv").config();
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -7,8 +8,8 @@ const transporter = nodemailer.createTransport({
   port: 465,
   secure: true,
   auth: {
-    user: "jenishbhilavala@gmail.com",
-    pass: "uqis ecsx wkdq yvzs",
+    user: process.env.USER_MAIL,
+    pass: process.env.USER_PASS,
   },
 });
 
@@ -16,34 +17,19 @@ const generateOTP = () => {
   return crypto.randomInt(100000, 999999).toString();
 };
 
-const sendOTP = (email, otp, db) => {
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+const sendOTP = (obj) => {
+  const { email, otp } = obj;
+  let mailOptions;
 
-  db.query(
-    `INSERT INTO otp (email, otp, expires_at) VALUES (?, ?, ?)`,
-    [email, otp, expiresAt],
-    (err, result) => {
-      if (err) {
-        console.error("Error inserting OTP into database: ", err);
-        return;
-      }
-      console.log("OTP stored successfully in the database.");
-    }
-  );
+  if (email && otp) {
+    mailOptions = {
+      to: email,
+      subject: "OTP Verification",
+      html: `Your OTP is <strong>${otp}</strong><br>Please do not share it with anyone.<br>OTP will expire in 5 minutes.`,
+    };
+  }
 
-  const mailOptions = {
-    to: email,
-    subject: "OTP Verification",
-    html: `Your OTP is <strong>${otp}</strong><br>Please do not share it with anyone.<br>OTP will expire in 5 minutes.`,
-  };
-
-  transporter.sendMail(mailOptions, (error) => {
-    if (error) {
-      console.error("Error sending OTP email:", error);
-    } else {
-      console.log("OTP sent.");
-    }
-  });
+  return transporter.sendMail(mailOptions);
 };
 
 module.exports = { sendOTP, generateOTP };
