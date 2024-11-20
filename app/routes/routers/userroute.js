@@ -8,8 +8,8 @@ const {
   verifyEmail,
 } = require("../../controller/usercontroller");
 
-router.get("/registeration", getUser);
-router.post("/registeration", upload.single("image"), registerUser);
+router.get("/registration", getUser);
+router.post("/registration", upload.single("image"), registerUser);
 router.post("/login", loginUser);
 router.post("/verify-email", verifyEmail);
 

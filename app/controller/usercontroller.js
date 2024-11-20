@@ -1,20 +1,14 @@
 const db = require("../middleware/db");
-const { sendOTP, generateOTP } = require("../services/email");
-const logger = require("../services/logger");
-const { registerValidation, loginUser } = require("../validation/userValidate");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const message = require("../utils/message");
+const { registerValidation, loginUser } = require("../validation/userValidate");
+const responseStatus = require("../utils/enum");
+const { sendOTP, generateOTP } = require("../services/email");
 const { StatusCodes } = require("http-status-codes");
-const {
-  BadRequest,
-  GeneralError,
-  NotFound,
-  UnAuthorized,
-} = require("../utils/error");
+const { GeneralError, NotFound, UnAuthorized } = require("../utils/error");
 const { GeneralResponse } = require("../utils/response");
 require("dotenv").config();
-const responseStatus = require("../utils/enum");
 
 module.exports = {
   // Register
@@ -23,10 +17,11 @@ module.exports = {
       const { error } = registerValidation.validate(req.body);
       if (error) {
         return next(
-          new BadRequest(
+          new GeneralError(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.BAD_REQUEST,
             `${error.details[0].message}`,
-            undefined,
-            StatusCodes.BAD_REQUEST
+            undefined
           )
         );
       }
@@ -37,12 +32,12 @@ module.exports = {
       const findUser = `SELECT * FROM users WHERE email = ?`;
       db.query(findUser, [email], async (err, results) => {
         if (err) {
-          logger.error(`Error checking email: ${err.message}`);
           return next(
-            new BadRequest(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.BAD_REQUEST,
               message.DATABASE_ERROR,
-              { message: err.message },
-              StatusCodes.BAD_REQUEST
+              err.message
             )
           );
         }
@@ -80,7 +75,6 @@ module.exports = {
         ],
         (err, result) => {
           if (err) {
-            logger.error(`Error inserting user: ${err.message}`);
             return next(
               new GeneralError(
                 responseStatus.RESPONSE_ERROR,
@@ -102,12 +96,12 @@ module.exports = {
         }
       );
     } catch (error) {
-      logger.error(`${message.ERROR_REGISTERING_USER}: ${error.message}`);
       return next(
-        new BadRequest(
+        new GeneralError(
+          responseStatus.RESPONSE_ERROR,
+          StatusCodes.INTERNAL_SERVER_ERROR,
           message.INTERNAL_SERVER_ERROR,
-          { error: error.message },
-          StatusCodes.INTERNAL_SERVER_ERROR
+          error.message
         )
       );
     }
@@ -119,12 +113,12 @@ module.exports = {
 
     db.query(displayUsers, (err, results) => {
       if (err) {
-        logger.error(`${message.ERROR_FETCHING_USER}: ${err.message}`);
         return next(
-          new BadRequest(
+          new GeneralError(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.INTERNAL_SERVER_ERROR,
             message.ERROR_FETCHING_USER,
-            { error: err.message },
-            StatusCodes.INTERNAL_SERVER_ERROR
+            err.message
           )
         );
       }
@@ -147,10 +141,11 @@ module.exports = {
       const { error } = loginUser.validate(req.body);
       if (error) {
         return next(
-          new BadRequest(
+          new GeneralError(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.BAD_REQUEST,
             `${error.details[0].message}`,
-            { updated: false },
-            StatusCodes.BAD_REQUEST
+            undefined
           )
         );
       }
@@ -158,18 +153,25 @@ module.exports = {
       const findUser = `SELECT * FROM users WHERE email = ?`;
       db.query(findUser, [email], async (err, results) => {
         if (err) {
-          logger.error(`${message.ERROR_FINDING_USER}: ${err.message}`);
           return next(
-            new BadRequest(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.INTERNAL_SERVER_ERROR,
               message.INTERNAL_SERVER_ERROR,
-              { updated: false },
-              StatusCodes.INTERNAL_SERVER_ERROR
+              undefined
             )
           );
         }
 
         if (results.length === 0) {
-          return next(new NotFound(message.USER_NOT_FOUND));
+          return next(
+            new NotFound(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.NOT_FOUND,
+              message.USER_NOT_FOUND,
+              undefined
+            )
+          );
         }
 
         const user = results[0];
@@ -192,12 +194,17 @@ module.exports = {
             )
           );
         } else {
-          logger.error(`${message.INVALID_CERIDIAN}: ${email}`);
-          return next(new UnAuthorized(message.INVALID_CERIDIAN));
+          return next(
+            new UnAuthorized(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.UNAUTHORIZED,
+              message.INVALID_CREDENTIAL,
+              undefined
+            )
+          );
         }
       });
     } catch (error) {
-      logger.error(`Error in loginUser: ${error.message}`);
       return next(
         new GeneralError(
           responseStatus.RESPONSE_ERROR,
@@ -215,7 +222,6 @@ module.exports = {
 
     db.query(findUser, [email], async (error, result) => {
       if (error) {
-        console.error(`${message.DATABASE_ERROR}`, error);
         next(
           new GeneralError(
             responseStatus.RESPONSE_ERROR,
@@ -233,7 +239,6 @@ module.exports = {
         const insertOtpQuery = `INSERT INTO otp (email, otp, expires_at) VALUES (?, ?, ?)`;
         db.query(insertOtpQuery, [email, otp, expiresAt], (err, result) => {
           if (err) {
-            console.error("Error inserting OTP into database: ", err);
             return next(
               new GeneralError(
                 responseStatus.RESPONSE_ERROR,
@@ -243,7 +248,6 @@ module.exports = {
               )
             );
           }
-          console.log("OTP stored successfully in the database.");
 
           sendOTP(email, otp)
             .then(() => {
@@ -258,12 +262,25 @@ module.exports = {
               );
             })
             .catch((error) => {
-              console.error("Error sending OTP email:", error);
-              return next(new GeneralError(message.OTP_NOT_SENT, error));
+              return next(
+                new GeneralError(
+                  responseStatus.RESPONSE_ERROR,
+                  StatusCodes.INTERNAL_SERVER_ERROR,
+                  message.OTP_NOT_SENT,
+                  undefined
+                )
+              );
             });
         });
       } else {
-        return next(new NotFound(message.USER_NOT_FOUND));
+        return next(
+          new NotFound(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.NOT_FOUND,
+            message.USER_NOT_FOUND,
+            undefined
+          )
+        );
       }
     });
   },
