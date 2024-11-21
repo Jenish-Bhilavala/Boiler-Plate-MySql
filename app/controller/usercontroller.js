@@ -3,7 +3,11 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const message = require("../utils/message");
 const responseStatus = require("../utils/enum");
-const { registerValidation, loginUser } = require("../validation/userValidate");
+const {
+  registerValidation,
+  loginUser,
+  forgotPasswordValidation,
+} = require("../validation/userValidate");
 const { sendOTP, generateOTP } = require("../services/email");
 const { StatusCodes } = require("http-status-codes");
 const { GeneralError, NotFound, UnAuthorized } = require("../utils/error");
@@ -29,13 +33,13 @@ module.exports = {
       const { firstName, lastName, hobby, gender, email, password, phone } =
         req.body;
 
-      const findUser = `SELECT * FROM users WHERE email = ?`;
+      const findUser = "SELECT * FROM users WHERE email = ?";
       db.query(findUser, [email], async (err, results) => {
         if (err) {
           return next(
             new GeneralError(
               responseStatus.RESPONSE_ERROR,
-              StatusCodes.BAD_REQUEST,
+              StatusCodes.INTERNAL_SERVER_ERROR,
               message.DATABASE_ERROR,
               err.message
             )
@@ -52,49 +56,49 @@ module.exports = {
             )
           );
         }
-      });
 
-      const image = req.file ? req.file.filename : null;
-      const saltRounds = 10;
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
+        const image = req.file ? req.file.filename : null;
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-      const createUser = `INSERT INTO users (firstName, lastName, hobby, gender, email, password, phone, image) 
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+        const createUser = `INSERT INTO users (firstName, lastName, hobby, gender, email, password, phone, image) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
-      db.query(
-        createUser,
-        [
-          firstName,
-          lastName,
-          hobby,
-          gender,
-          email,
-          hashedPassword,
-          phone,
-          image,
-        ],
-        (err, result) => {
-          if (err) {
+        db.query(
+          createUser,
+          [
+            firstName,
+            lastName,
+            hobby,
+            gender,
+            email,
+            hashedPassword,
+            phone,
+            image,
+          ],
+          (err, result) => {
+            if (err) {
+              return next(
+                new GeneralError(
+                  responseStatus.RESPONSE_ERROR,
+                  StatusCodes.INTERNAL_SERVER_ERROR,
+                  message.ERROR_REGISTERING_USER,
+                  undefined
+                )
+              );
+            }
+
             return next(
-              new GeneralError(
-                responseStatus.RESPONSE_ERROR,
-                StatusCodes.INTERNAL_SERVER_ERROR,
-                message.ERROR_REGISTERING_USER,
-                undefined
+              new GeneralResponse(
+                responseStatus.RESPONSE_SUCCESS,
+                StatusCodes.CREATED,
+                message.REGISTERING_USER,
+                { userId: result.insertId }
               )
             );
           }
-
-          return next(
-            new GeneralResponse(
-              responseStatus.RESPONSE_SUCCESS,
-              StatusCodes.CREATED,
-              message.REGISTERING_USER,
-              { userId: result.insertId }
-            )
-          );
-        }
-      );
+        );
+      });
     } catch (error) {
       return next(
         new GeneralError(
@@ -107,9 +111,9 @@ module.exports = {
     }
   },
 
-  // Get all user
+  // Get all users
   getUser: (req, res, next) => {
-    const displayUsers = `SELECT * FROM users`;
+    const displayUsers = "SELECT * FROM users";
 
     db.query(displayUsers, (err, results) => {
       if (err) {
@@ -150,7 +154,7 @@ module.exports = {
         );
       }
 
-      const findUser = `SELECT * FROM users WHERE email = ?`;
+      const findUser = "SELECT * FROM users WHERE email = ?";
       db.query(findUser, [email], async (err, results) => {
         if (err) {
           return next(
@@ -164,18 +168,10 @@ module.exports = {
         }
 
         if (results.length === 0) {
-          return next(
-            new NotFound(
-              responseStatus.RESPONSE_ERROR,
-              StatusCodes.NOT_FOUND,
-              `User ${message.NOT_FOUND}`,
-              undefined
-            )
-          );
+          return res.status(404).json({ message: "User not found" });
         }
 
         const user = results[0];
-
         const isPasswordMatch = await bcrypt.compare(password, user.password);
 
         if (isPasswordMatch) {
@@ -185,23 +181,12 @@ module.exports = {
             { expiresIn: "24h" }
           );
 
-          return next(
-            new GeneralResponse(
-              responseStatus.RESPONSE_SUCCESS,
-              StatusCodes.OK,
-              message.LOGIN_SUCCESS,
-              { token }
-            )
-          );
+          return res.status(200).json({
+            message: "Login successful",
+            token,
+          });
         } else {
-          return next(
-            new UnAuthorized(
-              responseStatus.RESPONSE_ERROR,
-              StatusCodes.UNAUTHORIZED,
-              message.INVALID_CREDENTIAL,
-              undefined
-            )
-          );
+          return res.status(401).json({ message: "Invalid email or password" });
         }
       });
     } catch (error) {
@@ -210,71 +195,32 @@ module.exports = {
           responseStatus.RESPONSE_ERROR,
           StatusCodes.INTERNAL_SERVER_ERROR,
           message.INTERNAL_SERVER_ERROR,
-          undefined
+          error.message
         )
       );
     }
   },
-  // email verify
+
+  // Email verification
   verifyEmail: (req, res, next) => {
     const email = req.body.email;
-    const findUser = `SELECT * FROM users WHERE email = ?`;
 
-    db.query(findUser, [email], async (error, result) => {
+    const findUserQuery = "SELECT * FROM users WHERE email = ?";
+    db.query(findUserQuery, [email], (error, result) => {
       if (error) {
-        next(
+        return next(
           new GeneralError(
             responseStatus.RESPONSE_ERROR,
             StatusCodes.INTERNAL_SERVER_ERROR,
-            message.INTERNAL_SERVER_ERROR,
-            undefined
+            message.DATABASE_ERROR,
+            error
           )
         );
       }
 
-      if (result.length > 0) {
-        const otp = generateOTP();
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-
-        const insertOtpQuery = `INSERT INTO otp (email, otp, expires_at) VALUES (?, ?, ?)`;
-        db.query(insertOtpQuery, [email, otp, expiresAt], (err, result) => {
-          if (err) {
-            return next(
-              new GeneralError(
-                responseStatus.RESPONSE_ERROR,
-                StatusCodes.INTERNAL_SERVER_ERROR,
-                message.INTERNAL_SERVER_ERROR,
-                undefined
-              )
-            );
-          }
-
-          sendOTP(email, otp)
-            .then(() => {
-              console.log(message.OTP_SENT);
-              return next(
-                new GeneralResponse(
-                  responseStatus.RESPONSE_SUCCESS,
-                  StatusCodes.OK,
-                  message.OTP_SENT,
-                  { OTP: otp }
-                )
-              );
-            })
-            .catch((error) => {
-              return next(
-                new GeneralError(
-                  responseStatus.RESPONSE_ERROR,
-                  StatusCodes.INTERNAL_SERVER_ERROR,
-                  message.OTP_NOT_SENT,
-                  undefined
-                )
-              );
-            });
-        });
-      } else {
+      if (result.length === 0) {
         return next(
-          new NotFound(
+          new GeneralError(
             responseStatus.RESPONSE_ERROR,
             StatusCodes.NOT_FOUND,
             `User ${message.NOT_FOUND}`,
@@ -282,6 +228,160 @@ module.exports = {
           )
         );
       }
+
+      const otp = generateOTP();
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 5);
+
+      const insertOtpQuery =
+        "INSERT INTO otp (email, otp, expires_at) VALUES (?, ?, ?)";
+      db.query(insertOtpQuery, [email, otp, expiresAt], (err) => {
+        if (err) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.INTERNAL_SERVER_ERROR,
+              message.DATABASE_ERROR,
+              err.message
+            )
+          );
+        }
+
+        if (sendOTP(email, otp)) {
+          return next(
+            new GeneralResponse(
+              responseStatus.RESPONSE_SUCCESS,
+              StatusCodes.OK,
+              message.OTP_SENT,
+              { result: otp }
+            )
+          );
+        }
+
+        return next(
+          new GeneralError(
+            responseStatus.RESPONSE_ERROR,
+            StatusCodes.INTERNAL_SERVER_ERROR,
+            message.FAILED_SENDING_OTP,
+            sendError.message
+          )
+        );
+      });
     });
+  },
+
+  // Reset Password
+  forgotPassword: (req, res, next) => {
+    const { email, newPassword, confirmPassword, otp } = req.body;
+
+    const { error } = forgotPasswordValidation.validate({
+      newPassword,
+      confirmPassword,
+    });
+
+    if (error) {
+      return next(
+        new GeneralError(
+          responseStatus.RESPONSE_ERROR,
+          StatusCodes.BAD_REQUEST,
+          error.details[0].message,
+          undefined
+        )
+      );
+    }
+
+    db.query(
+      "SELECT * FROM otp WHERE email = ? ORDER BY created_at DESC LIMIT 1",
+      [email],
+      (err, result) => {
+        if (err) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.INTERNAL_SERVER_ERROR,
+              message.INTERNAL_SERVER_ERROR,
+              err.message
+            )
+          );
+        }
+
+        if (result.length === 0) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.NOT_FOUND,
+              message.INVALID_OTP,
+              undefined
+            )
+          );
+        }
+
+        const storedOtp = result[0].otp;
+        const expiresAt = result[0].expires_at;
+
+        if (storedOtp !== otp) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.BAD_REQUEST,
+              message.INVALID_OTP,
+              undefined
+            )
+          );
+        }
+
+        const now = new Date();
+
+        if (now >= expiresAt) {
+          return next(
+            new GeneralError(
+              responseStatus.RESPONSE_ERROR,
+              StatusCodes.BAD_REQUEST,
+              message.OTP_EXPIRED,
+              undefined
+            )
+          );
+        }
+
+        bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
+          if (err) {
+            return next(
+              new GeneralError(
+                responseStatus.RESPONSE_ERROR,
+                StatusCodes.INTERNAL_SERVER_ERROR,
+                message.INTERNAL_SERVER_ERROR,
+                err.message
+              )
+            );
+          }
+
+          db.query(
+            "UPDATE users SET password = ? WHERE email = ?",
+            [hashedPassword, email],
+            (err, result) => {
+              if (err) {
+                return next(
+                  new GeneralError(
+                    responseStatus.RESPONSE_ERROR,
+                    StatusCodes.INTERNAL_SERVER_ERROR,
+                    message.UPDATE_PASSWORD_ERROR,
+                    err.message
+                  )
+                );
+              }
+
+              return next(
+                new GeneralResponse(
+                  responseStatus.RESPONSE_SUCCESS,
+                  StatusCodes.OK,
+                  message.UPDATE_PASSWORD,
+                  undefined
+                )
+              );
+            }
+          );
+        });
+      }
+    );
   },
 };

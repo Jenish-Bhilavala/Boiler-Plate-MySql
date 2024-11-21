@@ -29,7 +29,7 @@ const registerValidation = Joi.object({
     "string.email": "Email must be a valid email address.",
   }),
   password: Joi.string()
-    .pattern(new RegExp("^[A-Z][a-zA-Z0-9]{7,}$"))
+    .pattern(new RegExp("^[A-Z][a-zA-Z0-9!@#$%&*.]{7,}$"))
     .required()
     .messages({
       "string.pattern.base":
@@ -59,4 +59,24 @@ const loginUser = Joi.object({
   }),
 });
 
-module.exports = { registerValidation, loginUser };
+const forgotPasswordValidation = Joi.object({
+  newPassword: Joi.string()
+    .pattern(new RegExp("^[A-Z][a-zA-Z0-9!@#$%&*.]{7,}$"))
+    .required()
+    .messages({
+      "string.pattern.base":
+        "Password must start with a capital letter and be at least 8 characters long.",
+      "string.empty": "Password cannot be empty.",
+      "any.required": "Password is a required field.",
+    }),
+  confirmPassword: Joi.string()
+    .valid(Joi.ref("newPassword"))
+    .required()
+    .messages({
+      "any.only": "Password and confirm password must match.",
+      "string.empty": "Confirm password cannot be empty.",
+      "any.required": "Confirm password is a required field.",
+    }),
+});
+
+module.exports = { registerValidation, loginUser, forgotPasswordValidation };

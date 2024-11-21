@@ -19,4 +19,9 @@ module.exports = {
   LOGIN_SUCCESS: `Login successfully.`,
   OTP_SENT: `OTP sent successfully.`,
   OTP_NOT_SENT: `Failed to sent otp.`,
+  INVALID_OTP: `Invalid otp.`,
+  OTP_EXPIRED: `OTP expired.`,
+  CONFIRM_PASSWORD_ERROR: `Confirm password must be the same.`,
+  UPDATE_PASSWORD_ERROR: `Password not updated`,
+  UPDATE_PASSWORD: `Password updated successfully`,
 };
